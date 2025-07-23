@@ -1,4 +1,4 @@
-# webapp.py - Price Finder USA con Búsqueda por Imagen
+# webapp.py - Car Spare Price con Búsqueda por Imagen
 from flask import Flask, request, jsonify, session, redirect, url_for, render_template_string, flash
 import requests
 import os
@@ -505,7 +505,7 @@ AUTH_LOGIN_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesion | Price Finder USA</title>
+    <title>Iniciar Sesion | Car Spare Price</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: linear-gradient(135deg, #4A90E2 0%, #50E3C2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .auth-container { max-width: 420px; width: 100%; background: white; border-radius: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden; }
@@ -530,7 +530,7 @@ AUTH_LOGIN_TEMPLATE = """
 <body>
     <div class="auth-container">
         <div class="form-header">
-            <h1>Price Finder USA</h1>
+            <h1>Car Spare Price</h1>
             <p>Iniciar Sesion</p>
         </div>
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -894,7 +894,7 @@ def results_page():
             ''' + products_html + '''
         </div>'''
         
-        return render_template_string(render_page('Resultados - Price Finder USA', content))
+        return render_template_string(render_page('Resultados - Car Spare Price', content))
     except Exception as e:
         print(f"Results page error: {e}")
         flash('Error al mostrar resultados.', 'danger')
@@ -947,7 +947,7 @@ def internal_error(error):
     return '<h1>500 - Error interno</h1><p><a href="/">Volver al inicio</a></p>', 500
 
 if __name__ == '__main__':
-    print("Price Finder USA con Búsqueda por Imagen - Starting...")
+    print("Car Spare Price con Búsqueda por Imagen - Starting...")
     print(f"Firebase: {'OK' if os.environ.get('FIREBASE_WEB_API_KEY') else 'NOT_CONFIGURED'}")
     print(f"SerpAPI: {'OK' if os.environ.get('SERPAPI_KEY') else 'NOT_CONFIGURED'}")
     print(f"Gemini Vision: {'OK' if GEMINI_READY else 'NOT_CONFIGURED'}")
