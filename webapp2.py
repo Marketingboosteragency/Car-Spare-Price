@@ -1,4 +1,4 @@
-# webapp.py - Car Spare Price con Búsqueda por Imagen
+# webapp.py - Car Spare Price con Búsqueda por Imagen y Sitios Especializados
 from flask import Flask, request, jsonify, session, redirect, url_for, render_template_string, flash
 import requests
 import os
@@ -53,6 +53,76 @@ elif GEMINI_AVAILABLE and not GEMINI_API_KEY:
 else:
     print("⚠️ Gemini no está disponible - búsqueda por imagen deshabilitada")
     GEMINI_READY = False
+
+# ==============================================================================
+# SITIOS DE AUTOPARTES ESPECIALIZADOS
+# ==============================================================================
+
+# Lista de sitios especializados en autopartes (extraída del archivo adjunto)
+AUTO_PARTS_SITES = {
+    # OEM Oficiales
+    'oem_sites': [
+        'parts.honda.com', 'parts.ford.com', 'parts.toyota.com', 'parts.chevrolet.com',
+        'parts.nissan.com', 'parts.hyundai.com', 'parts.kia.com', 'parts.bmw.com',
+        'parts.mercedes.com', 'parts.audi.com', 'parts.vw.com', 'parts.subaru.com',
+        'mopar.com', 'shop.bmwusa.com', 'parts.lexus.com', 'parts.gmc.com',
+        'parts.buick.com', 'parts.cadillac.com', 'parts.ramtrucks.com'
+    ],
+    
+    # Grandes plataformas multimarca
+    'major_platforms': [
+        'rockauto.com', 'carparts.com', 'partsgeek.com', '1aauto.com',
+        'carid.com', 'buyautoparts.com', 'autoanything.com', 'jcwhitney.com',
+        'detroitaxle.com', 'autopartswarehouse.com', 'myautostore.com'
+    ],
+    
+    # Cadenas físicas con presencia online
+    'retail_chains': [
+        'autozone.com', 'oreillyauto.com', 'advanceautoparts.com',
+        'napaonline.com', 'pepboys.com', 'carquest.com'
+    ],
+    
+    # Especialistas europeos
+    'european_specialists': [
+        'ecstuning.com', 'europaparts.com', 'fcpeuro.com', 'pelicanparts.com',
+        'autohausaz.com', 'rmeuropean.com', 'turnermotorsport.com',
+        'bimmerworld.com', 'ipdusa.com', 'swedishparts.com'
+    ],
+    
+    # Performance y tuning
+    'performance_sites': [
+        'jegs.com', 'summitracing.com', 'americanmuscle.com', 'quadratec.com',
+        'cjponyparts.com', 'lmr.com', 'steeda.com', 'maperformance.com'
+    ],
+    
+    # Salvamento y usadas
+    'salvage_sites': [
+        'car-part.com', 'row52.com', 'lkqonline.com', 'pullapart.com'
+    ],
+    
+    # Especialistas por marca
+    'brand_specialists': [
+        'hondapartsnow.com', 'toyotapartsdeal.com', 'nissanpartsdeal.com',
+        'fordpartsgiant.com', 'gmpartsdirect.com', 'bmwpartsdeal.com',
+        'mercedespartsdeal.com', 'audipartsdeal.com', 'subarupartsdeal.com',
+        'hyundaipartsdeal.com', 'kiapartsdeal.com', 'jeepparts.com',
+        'dodgeparts.com', 'ramparts.com', 'lexuspartsnow.com'
+    ]
+}
+
+# Términos que indican búsqueda de autopartes
+AUTO_PARTS_KEYWORDS = [
+    'auto parts', 'car parts', 'spare parts', 'automotive', 'repuestos',
+    'brake', 'brakes', 'freno', 'frenos', 'engine', 'motor', 'transmission',
+    'alternator', 'alternador', 'battery', 'bateria', 'starter', 'arranque',
+    'radiator', 'radiador', 'headlight', 'faro', 'taillight', 'suspension',
+    'shocks', 'struts', 'amortiguador', 'tire', 'llanta', 'wheel', 'rueda',
+    'filter', 'filtro', 'oil', 'aceite', 'spark plug', 'bujia', 'belt',
+    'correa', 'hose', 'manguera', 'bumper', 'parachoque', 'mirror', 'espejo',
+    'windshield', 'parabrisas', 'door handle', 'manija', 'seat', 'asiento',
+    'exhaust', 'escape', 'muffler', 'silenciador', 'catalytic', 'catalitico',
+    'fuel pump', 'bomba', 'water pump', 'thermostat', 'termostato'
+]
 
 # Firebase Auth Class
 class FirebaseAuth:
@@ -174,17 +244,20 @@ def analyze_image_with_gemini(image_content):
         print("🖼️ Analizando imagen con Gemini Vision...")
         
         prompt = """
-        Analiza esta imagen de producto y genera una consulta de búsqueda específica en inglés para encontrarlo en tiendas online.
+        Analiza esta imagen de autopartes/repuestos de carro y genera una consulta de búsqueda específica en inglés.
         
-        Incluye:
-        - Nombre exacto del producto
-        - Marca (si es visible)
-        - Modelo o características distintivas
-        - Color, tamaño
-        - Categoría del producto
+        Si es una autoparte, incluye:
+        - Nombre exacto de la pieza (brake pad, air filter, headlight, etc.)
+        - Marca si es visible (Bosch, Denso, ACDelco, etc.)
+        - Ubicación en el vehículo (front, rear, left, right)
+        - Características distintivas (size, color, type)
+        - Palabras clave de autopartes
         
-        Responde SOLO con la consulta de búsqueda optimizada para e-commerce.
-        Ejemplo: "blue tape painter's tape 2 inch width"
+        Si NO es una autoparte, identifica el producto normal.
+        
+        Responde SOLO con la consulta de búsqueda optimizada.
+        Ejemplo para autoparte: "front brake pads ceramic Honda Civic"
+        Ejemplo para otro producto: "blue painter's tape 2 inch"
         """
         
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
@@ -216,7 +289,7 @@ def validate_image(image_content):
     except:
         return False
 
-# Price Finder Class - MODIFICADO para búsqueda por imagen
+# Price Finder Class - MODIFICADO para autopartes especializadas
 class PriceFinder:
     def __init__(self):
         # Intentar multiples nombres de variables de entorno comunes
@@ -232,16 +305,31 @@ class PriceFinder:
         self.cache = {}
         self.cache_ttl = 180
         self.timeouts = {'connect': 3, 'read': 8}
-        self.blacklisted_stores = ['alibaba', 'aliexpress', 'temu', 'wish', 'banggood', 'dhgate', 'falabella', 'ripley', 'linio', 'mercadolibre']
+        self.blacklisted_stores = ['alibaba', 'aliexpress', 'temu', 'wish', 'banggood', 'dhgate']
+        
+        # Crear lista de todos los sitios de autopartes para priorización
+        self.auto_parts_domains = []
+        for category in AUTO_PARTS_SITES.values():
+            self.auto_parts_domains.extend(category)
         
         if not self.api_key:
             print("WARNING: No se encontro API key en variables de entorno")
             print("Variables verificadas: SERPAPI_KEY, SERPAPI_API_KEY, SERP_API_KEY, serpapi_key, SERPAPI")
         else:
             print(f"SUCCESS: SerpAPI configurado correctamente (key: {self.api_key[:8]}...)")
+        
+        print(f"📋 {len(self.auto_parts_domains)} sitios especializados en autopartes cargados")
     
     def is_api_configured(self):
         return bool(self.api_key)
+    
+    def _is_auto_parts_query(self, query):
+        """Detecta si la búsqueda es sobre autopartes"""
+        if not query:
+            return False
+        
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in AUTO_PARTS_KEYWORDS)
     
     def _extract_price(self, price_str):
         if not price_str:
@@ -255,14 +343,34 @@ class PriceFinder:
             pass
         return 0.0
     
-    def _generate_realistic_price(self, query, index=0):
+    def _generate_realistic_price(self, query, index=0, is_auto_parts=False):
         query_lower = query.lower()
-        if any(word in query_lower for word in ['phone', 'laptop']):
-            base_price = 400
-        elif any(word in query_lower for word in ['shirt', 'shoes']):
-            base_price = 35
+        
+        if is_auto_parts:
+            # Precios más realistas para autopartes
+            if any(word in query_lower for word in ['brake', 'brakes', 'freno']):
+                base_price = 45
+            elif any(word in query_lower for word in ['filter', 'filtro']):
+                base_price = 15
+            elif any(word in query_lower for word in ['battery', 'bateria']):
+                base_price = 120
+            elif any(word in query_lower for word in ['alternator', 'starter']):
+                base_price = 180
+            elif any(word in query_lower for word in ['headlight', 'faro']):
+                base_price = 85
+            elif any(word in query_lower for word in ['bumper', 'parachoque']):
+                base_price = 280
+            else:
+                base_price = 60
         else:
-            base_price = 25
+            # Precios para productos generales
+            if any(word in query_lower for word in ['phone', 'laptop']):
+                base_price = 400
+            elif any(word in query_lower for word in ['shirt', 'shoes']):
+                base_price = 35
+            else:
+                base_price = 25
+        
         return round(base_price * (1 + index * 0.15), 2)
     
     def _clean_text(self, text):
@@ -274,6 +382,14 @@ class PriceFinder:
         if not source:
             return False
         return any(blocked in str(source).lower() for blocked in self.blacklisted_stores)
+    
+    def _is_preferred_auto_parts_store(self, source):
+        """Verifica si la fuente es un sitio especializado en autopartes"""
+        if not source:
+            return False
+        
+        source_lower = str(source).lower()
+        return any(domain.lower() in source_lower for domain in self.auto_parts_domains)
     
     def _get_valid_link(self, item):
         if not item:
@@ -294,7 +410,14 @@ class PriceFinder:
         if not self.api_key:
             return None
         
-        params = {'engine': engine, 'q': query, 'api_key': self.api_key, 'num': 5, 'location': 'United States', 'gl': 'us'}
+        params = {
+            'engine': engine, 
+            'q': query, 
+            'api_key': self.api_key, 
+            'num': 8,  # Incrementado para obtener más resultados
+            'location': 'United States', 
+            'gl': 'us'
+        }
         try:
             time.sleep(0.3)
             response = requests.get(self.base_url, params=params, timeout=(self.timeouts['connect'], self.timeouts['read']))
@@ -305,18 +428,24 @@ class PriceFinder:
             print(f"Error en request: {e}")
             return None
     
-    def _process_results(self, data, engine):
+    def _process_results(self, data, engine, is_auto_parts=False):
         if not data:
             return []
+        
         products = []
         results_key = 'shopping_results' if engine == 'google_shopping' else 'organic_results'
         if results_key not in data:
             return []
         
-        for item in data[results_key][:3]:
+        # Separar resultados por tipo de tienda
+        preferred_results = []
+        other_results = []
+        
+        for item in data[results_key][:8]:  # Procesar más resultados
             try:
                 if not item or self._is_blacklisted_store(item.get('source', '')):
                     continue
+                
                 title = item.get('title', '')
                 if not title or len(title) < 3:
                     continue
@@ -324,10 +453,10 @@ class PriceFinder:
                 price_str = item.get('price', '')
                 price_num = self._extract_price(price_str)
                 if price_num == 0:
-                    price_num = self._generate_realistic_price(title, len(products))
+                    price_num = self._generate_realistic_price(title, len(products), is_auto_parts)
                     price_str = f"${price_num:.2f}"
                 
-                products.append({
+                product = {
                     'title': self._clean_text(title),
                     'price': str(price_str),
                     'price_numeric': float(price_num),
@@ -335,20 +464,31 @@ class PriceFinder:
                     'link': self._get_valid_link(item),
                     'rating': str(item.get('rating', '')),
                     'reviews': str(item.get('reviews', '')),
-                    'image': ''
-                })
-                if len(products) >= 3:
-                    break
+                    'image': '',
+                    'is_specialized': False
+                }
+                
+                # Priorizar sitios especializados en autopartes
+                if is_auto_parts and self._is_preferred_auto_parts_store(item.get('source', '')):
+                    product['is_specialized'] = True
+                    preferred_results.append(product)
+                else:
+                    other_results.append(product)
+                
             except Exception as e:
                 print(f"Error procesando item: {e}")
                 continue
-        return products
+        
+        # Combinar resultados: especializados primero, luego otros
+        all_results = preferred_results + other_results
+        return all_results[:6]  # Limitar a 6 resultados finales
     
     def search_products(self, query=None, image_content=None):
-        """Búsqueda mejorada con soporte para imagen"""
+        """Búsqueda mejorada con soporte para imagen y sitios especializados"""
         # Determinar consulta final
         final_query = None
         search_source = "text"
+        is_auto_parts = False
         
         if image_content and GEMINI_READY and PIL_AVAILABLE:
             if validate_image(image_content):
@@ -380,15 +520,19 @@ class PriceFinder:
                 print("⚠️ Imagen proporcionada pero Gemini no está configurado")
         
         if not final_query or len(final_query.strip()) < 2:
-            return self._get_examples("producto")
+            return self._get_examples("producto", False)
         
         final_query = final_query.strip()
-        print(f"📝 Búsqueda final: '{final_query}' (fuente: {search_source})")
+        
+        # Detectar si es búsqueda de autopartes
+        is_auto_parts = self._is_auto_parts_query(final_query)
+        
+        print(f"📝 Búsqueda final: '{final_query}' (fuente: {search_source}, autopartes: {is_auto_parts})")
         
         # Continuar con lógica de búsqueda existente
         if not self.api_key:
             print("Sin API key - usando ejemplos")
-            return self._get_examples(final_query)
+            return self._get_examples(final_query, is_auto_parts)
         
         cache_key = f"search_{hash(final_query.lower())}"
         if cache_key in self.cache:
@@ -399,22 +543,39 @@ class PriceFinder:
         start_time = time.time()
         all_products = []
         
+        # Búsqueda optimizada para autopartes
         if time.time() - start_time < 8:
-            query_optimized = f'"{final_query}" buy online'
-            data = self._make_api_request('google_shopping', query_optimized)
-            products = self._process_results(data, 'google_shopping')
+            if is_auto_parts:
+                # Búsqueda específica para autopartes
+                auto_query = f'"{final_query}" auto parts car parts buy online'
+                print(f"🔧 Búsqueda especializada en autopartes: {auto_query}")
+            else:
+                # Búsqueda general
+                auto_query = f'"{final_query}" buy online'
+            
+            data = self._make_api_request('google_shopping', auto_query)
+            products = self._process_results(data, 'google_shopping', is_auto_parts)
             all_products.extend(products)
         
         if not all_products:
-            all_products = self._get_examples(final_query)
+            all_products = self._get_examples(final_query, is_auto_parts)
         
-        all_products.sort(key=lambda x: x['price_numeric'])
-        final_products = all_products[:6]
+        # Ordenar por tipo de tienda y precio
+        specialized_products = [p for p in all_products if p.get('is_specialized', False)]
+        other_products = [p for p in all_products if not p.get('is_specialized', False)]
+        
+        # Ordenar cada grupo por precio
+        specialized_products.sort(key=lambda x: x['price_numeric'])
+        other_products.sort(key=lambda x: x['price_numeric'])
+        
+        # Combinar: especializados primero
+        final_products = (specialized_products + other_products)[:6]
         
         # Añadir metadata
         for product in final_products:
             product['search_source'] = search_source
             product['original_query'] = query if query else "imagen"
+            product['is_auto_parts_search'] = is_auto_parts
         
         self.cache[cache_key] = (final_products, time.time())
         if len(self.cache) > 10:
@@ -423,30 +584,42 @@ class PriceFinder:
         
         return final_products
     
-    def _get_examples(self, query):
-        stores = ['Amazon', 'Walmart', 'Target']
+    def _get_examples(self, query, is_auto_parts=False):
+        if is_auto_parts:
+            # Ejemplos específicos para autopartes
+            stores = ['RockAuto', 'CarParts.com', 'AutoZone']
+            search_urls = [
+                f"https://www.rockauto.com/en/catalog/",
+                f"https://www.carparts.com/search?q={quote_plus(str(query)[:30])}",
+                f"https://www.autozone.com/search?searchText={quote_plus(str(query)[:30])}"
+            ]
+        else:
+            # Ejemplos generales
+            stores = ['Amazon', 'Walmart', 'Target']
+            search_urls = [
+                f"https://www.amazon.com/s?k={quote_plus(str(query)[:30])}",
+                f"https://www.walmart.com/search?q={quote_plus(str(query)[:30])}",
+                f"https://www.target.com/s?searchTerm={quote_plus(str(query)[:30])}"
+            ]
+        
         examples = []
         for i in range(3):
-            price = self._generate_realistic_price(query, i)
+            price = self._generate_realistic_price(query, i, is_auto_parts)
             store = stores[i]
-            search_query = quote_plus(str(query)[:30])
-            if store == 'Amazon':
-                link = f"https://www.amazon.com/s?k={search_query}"
-            elif store == 'Walmart':
-                link = f"https://www.walmart.com/search?q={search_query}"
-            else:
-                link = f"https://www.target.com/s?searchTerm={search_query}"
+            link = search_urls[i]
             
             examples.append({
-                'title': f'{self._clean_text(query)} - {["Mejor Precio", "Oferta", "Popular"][i]}',
+                'title': f'{self._clean_text(query)} - {["Mejor Precio", "Oferta Popular", "Disponible"][i]}',
                 'price': f'${price:.2f}',
                 'price_numeric': price,
                 'source': store,
                 'link': link,
                 'rating': ['4.5', '4.2', '4.0'][i],
-                'reviews': ['500', '300', '200'][i],
+                'reviews': ['500+', '300+', '200+'][i],
                 'image': '',
-                'search_source': 'example'
+                'search_source': 'example',
+                'is_specialized': is_auto_parts and i == 0,  # Primer resultado como especializado
+                'is_auto_parts_search': is_auto_parts
             })
         return examples
 
@@ -493,6 +666,7 @@ def render_page(title, content):
         .or-divider { text-align: center; margin: 20px 0; color: #666; font-weight: 600; position: relative; }
         .or-divider:before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #dee2e6; z-index: 1; }
         .or-divider span { background: white; padding: 0 15px; position: relative; z-index: 2; }
+        .auto-parts-badge { background: linear-gradient(45deg, #ff6b35, #f7931e); color: white; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; }
     </style>
 </head>
 <body>''' + content + '''</body>
@@ -609,6 +783,9 @@ def search_page():
     # Verificar si búsqueda por imagen está disponible
     image_search_available = GEMINI_READY and PIL_AVAILABLE
     
+    # Contar sitios especializados
+    total_auto_sites = len(price_finder.auto_parts_domains)
+    
     content = '''
     <div class="container">
         <div class="user-info">
@@ -627,33 +804,34 @@ def search_page():
             {% endif %}
         {% endwith %}
         
-        <h1>Buscar Productos</h1>
-        <p class="subtitle">''' + ('Búsqueda por texto o imagen' if image_search_available else 'Búsqueda por texto') + ''' - Resultados en 15 segundos</p>
+        <h1>Car Spare Price<span class="auto-parts-badge">🔧 AUTOPARTES</span></h1>
+        <p class="subtitle">''' + ('Búsqueda especializada: texto o imagen' if image_search_available else 'Búsqueda especializada por texto') + ''' - Resultados en 15 segundos</p>
         
         <form id="searchForm" enctype="multipart/form-data">
             <div class="search-bar">
-                <input type="text" id="searchQuery" name="query" placeholder="Busca cualquier producto...">
+                <input type="text" id="searchQuery" name="query" placeholder="Busca autopartes: frenos, filtros, faros, batería...">
                 <button type="submit">Buscar</button>
             </div>
             
             ''' + ('<div class="or-divider"><span>O sube una imagen</span></div>' if image_search_available else '') + '''
             
-            ''' + ('<div class="image-upload" id="imageUpload"><input type="file" id="imageFile" name="image_file" accept="image/*"><label for="imageFile">📷 Buscar por imagen<br><small>JPG o PNG hasta 10MB</small></label><img id="imagePreview" class="image-preview" src="#" alt="Vista previa"></div>' if image_search_available else '') + '''
+            ''' + ('<div class="image-upload" id="imageUpload"><input type="file" id="imageFile" name="image_file" accept="image/*"><label for="imageFile">📷 Buscar por imagen<br><small>JPG o PNG hasta 10MB - Ideal para autopartes</small></label><img id="imagePreview" class="image-preview" src="#" alt="Vista previa"></div>' if image_search_available else '') + '''
         </form>
         
         <div class="tips">
-            <h4>Sistema optimizado''' + (' + Búsqueda por Imagen:' if image_search_available else ':') + '''</h4>
+            <h4>Sistema especializado en autopartes''' + (' + Búsqueda IA:' if image_search_available else ':') + '''</h4>
             <ul style="margin: 8px 0 0 15px; font-size: 13px;">
-                <li><strong>Velocidad:</strong> Resultados en menos de 15 segundos</li>
-                <li><strong>USA:</strong> Amazon, Walmart, Target, Best Buy</li>
-                <li><strong>Filtrado:</strong> Sin Alibaba, Temu, AliExpress</li>
-                ''' + ('<li><strong>🖼️ IA:</strong> Identifica productos en imágenes automáticamente</li>' if image_search_available else '<li><strong>⚠️ Imagen:</strong> Configura GEMINI_API_KEY para activar</li>') + '''
+                <li><strong>🔧 ''' + str(total_auto_sites) + ''' sitios especializados:</strong> RockAuto, CarParts, AutoZone, NAPA, O'Reilly</li>
+                <li><strong>⚡ Velocidad:</strong> Resultados priorizados en menos de 15 segundos</li>
+                <li><strong>🎯 OEM + Aftermarket:</strong> Honda, Toyota, Ford + marcas especializadas</li>
+                ''' + ('<li><strong>🤖 IA Visual:</strong> Identifica autopartes en fotos automáticamente</li>' if image_search_available else '<li><strong>⚠️ Imagen:</strong> Configura GEMINI_API_KEY para activar</li>') + '''
+                <li><strong>🚫 Sin importaciones baratas:</strong> Filtrado Alibaba, Temu, AliExpress</li>
             </ul>
         </div>
         
         <div id="loading" class="loading">
             <div class="spinner"></div>
-            <h3>Buscando productos...</h3>
+            <h3>Buscando en sitios especializados...</h3>
             <p id="loadingText">Máximo 15 segundos</p>
         </div>
         <div id="error" class="error"></div>
@@ -697,11 +875,17 @@ def search_page():
             const imageFile = imageSearchAvailable ? document.getElementById('imageFile').files[0] : null;
             
             if (!query && !imageFile) {
-                return showError('Por favor ingresa un producto' + (imageSearchAvailable ? ' o sube una imagen' : ''));
+                return showError('Por favor ingresa una autoparte' + (imageSearchAvailable ? ' o sube una imagen' : ''));
             }
             
             searching = true;
-            showLoading(imageFile ? '🖼️ Analizando imagen con IA...' : 'Buscando productos...');
+            
+            let loadingMessage = 'Buscando en sitios especializados...';
+            if (imageFile) {
+                loadingMessage = '🖼️ Analizando autoparte con IA...';
+            }
+            
+            showLoading(loadingMessage);
             
             const timeoutId = setTimeout(() => { 
                 searching = false; 
@@ -789,7 +973,7 @@ def api_search():
         search_type = "imagen" if image_content and not query else "texto+imagen" if image_content and query else "texto"
         print(f"Search request from {user_email}: {search_type}")
         
-        # Realizar búsqueda con soporte para imagen
+        # Realizar búsqueda con soporte para imagen y sitios especializados
         products = price_finder.search_products(query=query, image_content=image_content)
         
         session['last_search'] = {
@@ -806,8 +990,8 @@ def api_search():
     except Exception as e:
         print(f"Search error: {e}")
         try:
-            query = request.form.get('query', 'producto') if request.form.get('query') else 'producto'
-            fallback = price_finder._get_examples(query)
+            query = request.form.get('query', 'autoparte') if request.form.get('query') else 'autoparte'
+            fallback = price_finder._get_examples(query, True)  # True para autopartes
             session['last_search'] = {'query': str(query), 'products': fallback, 'timestamp': datetime.now().isoformat()}
             return jsonify({'success': True, 'products': fallback, 'total': len(fallback)})
         except:
@@ -831,14 +1015,17 @@ def results_page():
         search_type = search_data.get('search_type', 'texto')
         
         products_html = ""
-        badges = ['MEJOR', '2do', '3ro']
-        colors = ['#4caf50', '#ff9800', '#9c27b0']
+        badges = ['🥇 MEJOR', '🥈 2do', '🥉 3ro', '📍 4to', '📍 5to', '📍 6to']
+        colors = ['#4caf50', '#ff9800', '#9c27b0', '#607d8b', '#795548', '#455a64']
+        
+        specialized_count = sum(1 for p in products if p.get('is_specialized', False))
+        auto_parts_search = any(p.get('is_auto_parts_search', False) for p in products)
         
         for i, product in enumerate(products[:6]):
             if not product:
                 continue
             
-            badge = '<div style="position: absolute; top: 8px; right: 8px; background: ' + colors[min(i, 2)] + '; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">' + badges[min(i, 2)] + '</div>' if i < 3 else ''
+            badge = '<div style="position: absolute; top: 8px; right: 8px; background: ' + colors[min(i, 5)] + '; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">' + badges[min(i, 5)] + '</div>'
             
             # Badge de fuente de búsqueda
             search_source_badge = ''
@@ -848,16 +1035,26 @@ def results_page():
             elif source == 'combined':
                 search_source_badge = '<div style="position: absolute; top: 8px; left: 8px; background: #607d8b; color: white; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: bold;">🔗 MIXTO</div>'
             
+            # Badge de sitio especializado
+            specialized_badge = ''
+            if product.get('is_specialized', False):
+                specialized_badge = '<div style="position: absolute; top: 35px; left: 8px; background: #ff6b35; color: white; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: bold;">🔧 ESPECIALIZADO</div>'
+            
             title = html.escape(str(product.get('title', 'Producto')))
             price = html.escape(str(product.get('price', '$0.00')))
             source_store = html.escape(str(product.get('source', 'Tienda')))
             link = html.escape(str(product.get('link', '#')))
             
+            margin_top = '20px' if search_source_badge else '0'
+            if specialized_badge:
+                margin_top = '45px'
+            
             products_html += '''
                 <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: white; position: relative; box-shadow: 0 2px 4px rgba(0,0,0,0.08);">
                     ''' + badge + '''
                     ''' + search_source_badge + '''
-                    <h3 style="color: #1a73e8; margin-bottom: 8px; font-size: 16px; margin-top: ''' + ('20px' if search_source_badge else '0') + ';">''' + title + '''</h3>
+                    ''' + specialized_badge + '''
+                    <h3 style="color: #1a73e8; margin-bottom: 8px; font-size: 16px; margin-top: ''' + margin_top + ';">''' + title + '''</h3>
                     <div style="font-size: 28px; color: #2e7d32; font-weight: bold; margin: 12px 0;">''' + price + ''' <span style="font-size: 12px; color: #666;">USD</span></div>
                     <p style="color: #666; margin-bottom: 12px; font-size: 14px;">Tienda: ''' + source_store + '''</p>
                     <a href="''' + link + '''" target="_blank" rel="noopener noreferrer" style="background: #1a73e8; color: white; padding: 10px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; font-size: 14px;">Ver Producto</a>
@@ -868,13 +1065,21 @@ def results_page():
         if prices:
             min_price = min(prices)
             avg_price = sum(prices) / len(prices)
-            search_type_text = {"texto": "texto", "imagen": "imagen IA", "texto+imagen": "texto + imagen IA", "combined": "búsqueda mixta"}.get(search_type, search_type)
+            search_type_text = {
+                "texto": "texto", 
+                "imagen": "imagen IA", 
+                "texto+imagen": "texto + imagen IA", 
+                "combined": "búsqueda mixta"
+            }.get(search_type, search_type)
+            
             stats = '''
                 <div style="background: #e8f5e8; border: 1px solid #4caf50; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="color: #2e7d32; margin-bottom: 8px;">Resultados de búsqueda (''' + search_type_text + ''')</h3>
+                    <h3 style="color: #2e7d32; margin-bottom: 8px;">Resultados especializados (''' + search_type_text + ''')</h3>
                     <p><strong>''' + str(len(products)) + ''' productos encontrados</strong></p>
+                    <p><strong>🔧 Sitios especializados: ''' + str(specialized_count) + '/' + str(len(products)) + '''</strong></p>
                     <p><strong>Mejor precio: $''' + f'{min_price:.2f}' + '''</strong></p>
                     <p><strong>Precio promedio: $''' + f'{avg_price:.2f}' + '''</strong></p>
+                    ''' + ('<p style="color: #ff6b35;"><strong>🎯 Búsqueda optimizada para autopartes</strong></p>' if auto_parts_search else '') + '''
                 </div>'''
         
         content = '''
@@ -888,7 +1093,7 @@ def results_page():
             </div>
             
             <h1 style="color: white; text-align: center; margin-bottom: 8px;">Resultados: "''' + query + '''"</h1>
-            <p style="text-align: center; color: rgba(255,255,255,0.9); margin-bottom: 25px;">Busqueda completada</p>
+            <p style="text-align: center; color: rgba(255,255,255,0.9); margin-bottom: 25px;">Búsqueda especializada completada</p>
             
             ''' + stats + '''
             ''' + products_html + '''
@@ -909,7 +1114,8 @@ def health_check():
             'firebase_auth': 'enabled' if firebase_auth.firebase_web_api_key else 'disabled',
             'serpapi': 'enabled' if price_finder.is_api_configured() else 'disabled',
             'gemini_vision': 'enabled' if GEMINI_READY else 'disabled',
-            'pil_available': 'enabled' if PIL_AVAILABLE else 'disabled'
+            'pil_available': 'enabled' if PIL_AVAILABLE else 'disabled',
+            'auto_parts_sites': len(price_finder.auto_parts_domains)
         })
     except Exception as e:
         return jsonify({'status': 'ERROR', 'message': str(e)}), 500
@@ -947,11 +1153,12 @@ def internal_error(error):
     return '<h1>500 - Error interno</h1><p><a href="/">Volver al inicio</a></p>', 500
 
 if __name__ == '__main__':
-    print("Car Spare Price con Búsqueda por Imagen - Starting...")
+    print("Car Spare Price con Búsqueda Especializada - Starting...")
     print(f"Firebase: {'OK' if os.environ.get('FIREBASE_WEB_API_KEY') else 'NOT_CONFIGURED'}")
     print(f"SerpAPI: {'OK' if os.environ.get('SERPAPI_KEY') else 'NOT_CONFIGURED'}")
     print(f"Gemini Vision: {'OK' if GEMINI_READY else 'NOT_CONFIGURED'}")
     print(f"PIL/Pillow: {'OK' if PIL_AVAILABLE else 'NOT_CONFIGURED'}")
+    print(f"Auto Parts Sites: {len(price_finder.auto_parts_domains)} sitios especializados")
     print(f"Puerto: {os.environ.get('PORT', '5000')}")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False, threaded=True)
 else:
