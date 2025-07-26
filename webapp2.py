@@ -392,19 +392,71 @@ class PriceFinder:
         return any(domain.lower() in source_lower for domain in self.auto_parts_domains)
     
     def _get_valid_link(self, item):
+        """Genera enlaces directos a productos con prioridad para sitios especializados"""
         if not item:
             return "#"
+        
+        # Prioridad 1: Link directo del producto de la API
         product_link = item.get('product_link', '')
-        if product_link:
+        if product_link and len(product_link) > 10:
             return product_link
+        
+        # Prioridad 2: Link general de la API
         general_link = item.get('link', '')
-        if general_link:
+        if general_link and len(general_link) > 10:
             return general_link
+        
+        # Prioridad 3: Generar link específico basado en la tienda
         title = item.get('title', '')
+        source = item.get('source', '')
+        
+        if title and source:
+            search_query = quote_plus(str(title)[:60])
+            source_lower = str(source).lower()
+            
+            # Links específicos para sitios de autopartes
+            if 'rockauto' in source_lower:
+                return f"https://www.rockauto.com/en/catalog/"
+            elif 'carparts' in source_lower:
+                return f"https://www.carparts.com/search?q={search_query}"
+            elif 'autozone' in source_lower:
+                return f"https://www.autozone.com/search?searchText={search_query}"
+            elif 'oreillyauto' in source_lower or "o'reilly" in source_lower:
+                return f"https://www.oreillyauto.com/search?q={search_query}"
+            elif 'advanceautoparts' in source_lower or 'advance auto' in source_lower:
+                return f"https://shop.advanceautoparts.com/find/?searchTerm={search_query}"
+            elif 'napaonline' in source_lower or 'napa' in source_lower:
+                return f"https://www.napaonline.com/search?keyword={search_query}"
+            elif 'pepboys' in source_lower:
+                return f"https://www.pepboys.com/search?searchTerm={search_query}"
+            elif 'partsgeek' in source_lower:
+                return f"https://www.partsgeek.com/catalog/?searchTerm={search_query}"
+            elif '1aauto' in source_lower:
+                return f"https://www.1aauto.com/search?query={search_query}"
+            elif 'carid' in source_lower:
+                return f"https://www.carid.com/search/?keyword={search_query}"
+            # OEM específicos
+            elif 'honda' in source_lower and 'parts' in source_lower:
+                return f"https://parts.honda.com/search?searchTerm={search_query}"
+            elif 'toyota' in source_lower and 'parts' in source_lower:
+                return f"https://parts.toyota.com/search?searchTerm={search_query}"
+            elif 'ford' in source_lower and 'parts' in source_lower:
+                return f"https://parts.ford.com/search?searchTerm={search_query}"
+            # Sitios generales
+            elif 'amazon' in source_lower:
+                return f"https://www.amazon.com/s?k={search_query}"
+            elif 'walmart' in source_lower:
+                return f"https://www.walmart.com/search?q={search_query}"
+            elif 'target' in source_lower:
+                return f"https://www.target.com/s?searchTerm={search_query}"
+        
+        # Prioridad 4: Búsqueda en Google Shopping como fallback
         if title:
             search_query = quote_plus(str(title)[:50])
             return f"https://www.google.com/search?tbm=shop&q={search_query}"
-        return "#"
+        
+        # Último recurso: búsqueda general
+        return "https://www.google.com/search?q=auto+parts"
     
     def _make_api_request(self, engine, query):
         if not self.api_key:
@@ -456,12 +508,16 @@ class PriceFinder:
                     price_num = self._generate_realistic_price(title, len(products), is_auto_parts)
                     price_str = f"${price_num:.2f}"
                 
+                # Generar enlace válido
+                product_link = self._get_valid_link(item)
+                source_name = self._clean_text(item.get('source', 'Tienda'))
+                
                 product = {
                     'title': self._clean_text(title),
                     'price': str(price_str),
                     'price_numeric': float(price_num),
-                    'source': self._clean_text(item.get('source', 'Tienda')),
-                    'link': self._get_valid_link(item),
+                    'source': source_name,
+                    'link': product_link,
                     'rating': str(item.get('rating', '')),
                     'reviews': str(item.get('reviews', '')),
                     'image': '',
@@ -472,8 +528,10 @@ class PriceFinder:
                 if is_auto_parts and self._is_preferred_auto_parts_store(item.get('source', '')):
                     product['is_specialized'] = True
                     preferred_results.append(product)
+                    print(f"🔧 Specialized site found: {source_name} -> {product_link}")
                 else:
                     other_results.append(product)
+                    print(f"🏪 General site found: {source_name} -> {product_link}")
                 
             except Exception as e:
                 print(f"Error procesando item: {e}")
@@ -481,6 +539,7 @@ class PriceFinder:
         
         # Combinar resultados: especializados primero, luego otros
         all_results = preferred_results + other_results
+        print(f"📊 Results: {len(preferred_results)} specialized + {len(other_results)} general = {len(all_results)} total")
         return all_results[:6]  # Limitar a 6 resultados finales
     
     def search_products(self, query=None, image_content=None):
@@ -585,35 +644,51 @@ class PriceFinder:
         return final_products
     
     def _get_examples(self, query, is_auto_parts=False):
+        """Genera ejemplos con enlaces directos a productos"""
         if is_auto_parts:
-            # Ejemplos específicos para autopartes
+            # Ejemplos específicos para autopartes con enlaces directos
             stores = ['RockAuto', 'CarParts.com', 'AutoZone']
+            search_query = quote_plus(str(query)[:50])
+            
             search_urls = [
                 f"https://www.rockauto.com/en/catalog/",
-                f"https://www.carparts.com/search?q={quote_plus(str(query)[:30])}",
-                f"https://www.autozone.com/search?searchText={quote_plus(str(query)[:30])}"
+                f"https://www.carparts.com/search?q={search_query}",
+                f"https://www.autozone.com/search?searchText={search_query}"
+            ]
+            
+            # Títulos más específicos para autopartes
+            titles = [
+                f'{self._clean_text(query)} - Mejor Precio Garantizado',
+                f'{self._clean_text(query)} - Envío Gratis',
+                f'{self._clean_text(query)} - Disponible Hoy'
             ]
         else:
             # Ejemplos generales
             stores = ['Amazon', 'Walmart', 'Target']
+            search_query = quote_plus(str(query)[:50])
+            
             search_urls = [
-                f"https://www.amazon.com/s?k={quote_plus(str(query)[:30])}",
-                f"https://www.walmart.com/search?q={quote_plus(str(query)[:30])}",
-                f"https://www.target.com/s?searchTerm={quote_plus(str(query)[:30])}"
+                f"https://www.amazon.com/s?k={search_query}",
+                f"https://www.walmart.com/search?q={search_query}",
+                f"https://www.target.com/s?searchTerm={search_query}"
+            ]
+            
+            titles = [
+                f'{self._clean_text(query)} - Prime Delivery',
+                f'{self._clean_text(query)} - Pickup Today',
+                f'{self._clean_text(query)} - Free Shipping'
             ]
         
         examples = []
         for i in range(3):
             price = self._generate_realistic_price(query, i, is_auto_parts)
-            store = stores[i]
-            link = search_urls[i]
             
             examples.append({
-                'title': f'{self._clean_text(query)} - {["Mejor Precio", "Oferta Popular", "Disponible"][i]}',
+                'title': titles[i],
                 'price': f'${price:.2f}',
                 'price_numeric': price,
-                'source': store,
-                'link': link,
+                'source': stores[i],
+                'link': search_urls[i],
                 'rating': ['4.5', '4.2', '4.0'][i],
                 'reviews': ['500+', '300+', '200+'][i],
                 'image': '',
@@ -621,6 +696,8 @@ class PriceFinder:
                 'is_specialized': is_auto_parts and i == 0,  # Primer resultado como especializado
                 'is_auto_parts_search': is_auto_parts
             })
+        
+        print(f"📋 Generated {len(examples)} example products with direct links")
         return examples
 
 # Instancia global de PriceFinder
@@ -1057,7 +1134,10 @@ def results_page():
                     <h3 style="color: #1a73e8; margin-bottom: 8px; font-size: 16px; margin-top: ''' + margin_top + ';">''' + title + '''</h3>
                     <div style="font-size: 28px; color: #2e7d32; font-weight: bold; margin: 12px 0;">''' + price + ''' <span style="font-size: 12px; color: #666;">USD</span></div>
                     <p style="color: #666; margin-bottom: 12px; font-size: 14px;">Tienda: ''' + source_store + '''</p>
-                    <a href="''' + link + '''" target="_blank" rel="noopener noreferrer" style="background: #1a73e8; color: white; padding: 10px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; font-size: 14px;">Ver Producto</a>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <a href="''' + link + '''" target="_blank" rel="noopener noreferrer" style="background: #1a73e8; color: white; padding: 10px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; font-size: 14px; transition: background 0.3s ease;">🛒 Ver en ''' + source_store + '''</a>
+                        <span style="font-size: 12px; color: #888;">🔗 Abre en nueva pestaña</span>
+                    </div>
                 </div>'''
         
         prices = [p.get('price_numeric', 0) for p in products if p.get('price_numeric', 0) > 0]
